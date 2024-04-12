@@ -1,0 +1,106 @@
+---
+- name: Generate DNS Forwarder Config
+  hosts: 127.0.0.1
+  connection: local
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Create forwarders_string variable
+      ansible.builtin.set_fact:
+        forwarders_string: "{{ '; '.join(forwarders) }};"
+
+    - name: Create conf file
+      ansible.builtin.template:
+        src: bind/named.conf.j2
+        dest: named.conf.tmp
+
+
+- name: Deploy DNS Forwarder Config
+  hosts: all
+  serial: 1
+  become: yes
+  become_method: sudo
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Temporary config handling
+      block:
+        - name: Copy config to server
+          ansible.builtin.copy:
+            src: named.conf.tmp
+            dest: /tmp/named.conf.tmp
+            owner: root
+            group: root
+            mode: 0440
+
+        # named-checkconf returns RC 0 if the config is valid and RC 1 if there are errors. Ansible will automatically
+        # abort execution on any RC other than 0, so we do not need to set up explicit error handling for this
+        - name: Test temporary config with named-checkconf
+          ansible.builtin.command: /usr/bin/named-checkconf /tmp/named.conf.tmp
+          changed_when: False
+
+        - name: Deploy new configuration
+          ansible.builtin.copy:
+            src: /tmp/named.conf.tmp
+            dest: /etc/bind/named.conf
+            owner: root
+            group: bind
+            mode: 0644
+            backup: true
+            remote_src: true
+          register: named_config
+
+        # If named fails to reload ansible will count this as an error and move on to the rescue section
+        - name: Reload named
+          ansible.builtin.systemd_service:
+            name: named
+            state: reloaded
+
+        # nslookup returns RC 1 in the event of any query failure, so if the server does not respond or returns an
+        # invalid response ansible will count it as an error and trigger the rescue section
+        - name: Test DNS resolution
+          ansible.builtin.command: /usr/bin/nslookup www.google.com 127.0.0.1
+
+      # In the event any of the above tasks results in an error, this section will be executed to restore the previous
+      # configuration and reload named. This should return the server to the same state it was in before this playbook
+      # executed. Note that this section also runs if the new configuration fails named-checkconf, in which case we do
+      # not need to roll back any settings since the running named config has not been modified at that point in time.
+      # There are conditions on these tasks to ensure that the config is only rolled back in the event of a failure
+      # after the named configuration has actually been changed.
+      rescue:
+        - name: Restore previous config due to failure
+          ansible.builtin.copy:
+            src: "{{ named_config.backup_file }}"
+            dest: /etc/bind/named.conf
+            owner: root
+            group: bind
+            mode: 0644
+            remote_src: true
+          when: named_config is defined
+          register: restored_config
+
+        - name: Reload named after restoring config
+          ansible.builtin.systemd_service:
+            name: named
+            state: reloaded
+          when: restored_config.changed
+
+      always:
+        - name: Remove temporary config
+          ansible.builtin.file:
+            path: /tmp/named.conf.tmp
+            state: absent
+
+
+- name: Cleanup localhost
+  hosts: 127.0.0.1
+  connection: local
+  become: no
+
+  tasks:
+    - name: Remove conf file
+      ansible.builtin.file:
+        path: named.conf.tmp
+        state: absent

@@ -1,0 +1,140 @@
+logging {
+    {% for channel in log_channels -%}
+    channel {{ channel.name }} {
+        file "{{ channel.path }}" versions {{ channel.versions|default(log_channel_defaults.versions) }} size {{ channel.size|default(log_channel_defaults.size) }};
+        print-time {{ channel.print_time|default(log_channel_defaults.print_time) }};
+        print-category {{ channel.print_category|default(log_channel_defaults.print_category) }};
+        print-severity {{ channel.print_severity|default(log_channel_defaults.print_severity) }};
+        severity {{ channel.severity|default(log_channel_defaults.severity) }};
+    };
+    {% endfor -%}
+    
+    channel default_syslog {
+        print-time yes;
+        print-category yes;
+        print-severity yes;
+        syslog daemon;
+        severity info;
+    };
+
+    channel default_debug {
+        print-time yes;
+        print-category yes;
+        print-severity yes;
+        file "named.run";
+        severity dynamic;
+    };
+
+    category default { default_syslog; default_log; };
+    category config { default_syslog; default_log; };
+    category dispatch { default_syslog; default_log; };
+    category network { default_syslog; default_log; };
+    category general { default_syslog; default_log; };
+    
+    category zoneload { default_syslog; default_log; };
+    
+    category resolver { auth_servers_log; };
+    category cname { auth_servers_log; };
+    category delegation-only { auth_servers_log; };
+    category lame-servers { auth_servers_log; };
+    category edns-disabled { auth_servers_log; };
+    
+    category dnssec { dnssec_log; };
+    
+    category notify { zone_transfers_log; };
+    category xfer-in { zone_transfers_log; };
+    category xfer-out { zone_transfers_log; };
+    
+    category update{ ddns_log; };
+    category update-security { ddns_log; };
+    
+    category client{ client_security_log; };
+    category security { client_security_log; };
+    
+    category rate-limit { rate_limiting_log; };
+    category spill { rate_limiting_log; };
+    category database { rate_limiting_log; };
+    
+    category rpz { rpz_log; };
+    
+    category dnstap { dnstap_log; };
+    
+    category trust-anchor-telemetry { default_syslog; default_log; };
+    
+    category queries { queries_log; };
+    
+    category query-errors {query-errors_log; };
+};
+
+acl "trusted" {
+    {% for net in allowed_nets -%}
+        {{ net }};
+    {% endfor -%}
+    localhost;
+    localnets;
+};
+
+tls local-tls {
+    cert-file "/etc/bind/cert.pem";
+    key-file "/etc/bind/key.pem";
+};
+
+options {
+    directory "/var/cache/bind";
+
+    recursion yes;
+
+    allow-query { any; };
+    allow-recursion { trusted; };
+    allow-query-cache { trusted; };
+
+    forwarders {
+        169.254.169.253;
+        fd00:ec2::253;
+    };
+    forward only;
+
+    //========================================================================
+    // If BIND logs error messages about the root key being expired,
+    // you will need to update your keys.  See https://www.isc.org/bind-keys
+    //========================================================================
+    dnssec-validation yes;
+
+    querylog true;
+
+    listen-on port 443 tls local-tls http default { any; };
+    listen-on { any; };
+    listen-on-v6 { any; };
+};
+
+zone "." {
+    type hint;
+    file "/usr/share/dns/root.hints";
+};
+
+zone "localhost" {
+    type master;
+    file "/etc/bind/db.local";
+};
+
+zone "127.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.127";
+};
+
+zone "0.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.0";
+};
+
+zone "255.in-addr.arpa" {
+    type master;
+    file "/etc/bind/db.255";
+};
+
+{% for zone in forward_zones -%}
+zone "{{ zone }}" {
+    type forward;
+    forwarders { {{ forwarders_string }} };
+};
+{% endfor %}

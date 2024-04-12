@@ -1,0 +1,87 @@
+# These are the servers that queries for forwarded zones will be forwarded to. This should be our US DNS servers.
+# Note that these *ARE NOT* the default forwarders. Those are hardcoded in the named.conf template since they are
+# standard across all EC2 instances.
+forwarders:
+  - 10.3.1.242 # rdns.us-west-1a
+
+# These are the zones for which queries should be forwarded to the servers defined above
+forward_zones:
+  - bluecrossma.com
+  - anthem.com
+  - anthembluecross.com
+  - utah.gov
+  - deltadentalmi.com
+  - mvphealthcare.com
+
+# These are the networks that are allowed to use this server. Since we are using ZIA with SIPA to route this traffic
+# we also need to include the public IPs of our ZPA app connectors.
+allowed_nets:
+  - 10.19.0.0/16 # ap-east-1 VPC
+  - 18.166.47.93/32 # zpa-ap-east-1a public IP
+  # Begin Zscaler Egress IPs
+  - 185.46.212.0/22
+  - 104.129.192.0/20
+  - 165.225.0.0/17
+  - 165.225.192.0/18
+  - 147.161.128.0/17
+  - 136.226.0.0/16
+  - 137.83.128.0/18
+  - 167.103.0.0/16
+  - 170.85.0.0/16
+  - 194.9.96.0/20
+  - 194.9.112.0/22
+  - 194.9.116.0/24
+  - 87.58.64.0/18
+  - 198.14.64.0/18
+  - 101.2.192.0/18
+  - 2605:4300::/32
+  - 2a03:eec0::/32
+  - 2400:7aa0::/32
+  # End Zscaler Egress IPs
+
+# These are the default options for log channels defined below. Do not adjust these unless you know what you are doing.
+log_channel_defaults:
+  versions: 3
+  size: 20m
+  print_time: yes
+  print_category: yes
+  print_severity: yes
+  severity: info
+
+# This variable is used to simplify log channel configuration. Do not adjust these unless you know what you are doing.
+log_channels:
+  - name: default_log
+    path: /var/log/named/default
+
+  - name: auth_servers_log
+    path: /var/log/named/auth_servers
+    versions: 5
+
+  - name: dnssec_log
+    path: /var/log/named/dnssec
+
+  - name: zone_transfers_log
+    path: /var/log/named/zone_transfers
+
+  - name: ddns_log
+    path: /var/log/named/ddns
+
+  - name: client_security_log
+    path: /var/log/named/client_security
+
+  - name: rate_limiting_log
+    path: /var/log/named/rate_limiting
+
+  - name: rpz_log
+    path: /var/log/named/rpz
+
+  - name: dnstap_log
+    path: /var/log/named/dnstap
+
+  - name: queries_log
+    path: /var/log/named/queries
+    versions: 20
+
+  - name: query-errors_log
+    path: /var/log/named/query-errors
+    versions: 5
